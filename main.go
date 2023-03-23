@@ -4,11 +4,13 @@ import (
 	_ "embed"
 	"fmt"
 	"log"
+	"net/url"
 	"os"
 	"path"
 	"path/filepath"
 	"time"
 
+	"github.com/flytam/filenamify"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"github.com/melbahja/got"
@@ -27,13 +29,20 @@ var (
 	rootDir string
 )
 
-type RemoteDownloadRequest struct {
-	Url string `json:"url"`
+type PostRequest struct {
+	Url    string `json:"url"`
+	Method string `json:"method"`
+	Name   string `json:"name"`
 }
 
-type RemoteDownloadResponse struct {
+type DownloadResponse struct {
 	TaskId   string `json:"taskId"`
 	Filename string `json:"filename"`
+}
+
+type CreateDirResponse struct {
+	Name string `json:"name"`
+	Url  string `json:"url"`
 }
 
 type ListTaskRequestItem struct {
@@ -215,7 +224,7 @@ func genIndexHtml(rootDir string, uri string) string {
 			info, _ := item.Info()
 			html += fmt.Sprintf("<script>addRow('%s', '%s', 1, 0, '', %d, '%s');</script>\n",
 				item.Name(),
-				item.Name(),
+				url.PathEscape(item.Name()),
 				info.ModTime().Unix(),
 				info.ModTime().Format("2006-01-02 15:04:05"),
 			)
@@ -227,7 +236,7 @@ func genIndexHtml(rootDir string, uri string) string {
 			info, _ := item.Info()
 			html += fmt.Sprintf("<script>addRow('%s', '%s', 0, %d, '%s', %d, '%s');</script>\n",
 				item.Name(),
-				item.Name(),
+				url.PathEscape(item.Name()),
 				info.Size(),
 				humanReadableSize(info.Size()),
 				info.ModTime().Unix(),
@@ -316,18 +325,35 @@ func start_server(c *cli.Context) error {
 			return
 		}
 
-		req := RemoteDownloadRequest{}
+		req := PostRequest{}
 		err = c.BindJSON(&req)
 		if err == nil {
-			taskId, err := manager.AddTask(req.Url, filePath)
-			if err != nil {
-				c.String(500, err.Error())
-			} else {
-				c.JSON(200, RemoteDownloadResponse{
-					TaskId: taskId,
-				})
+			if req.Method == "download" {
+				taskId, err := manager.AddTask(req.Url, filePath)
+				if err != nil {
+					c.String(500, err.Error())
+				} else {
+					c.JSON(200, DownloadResponse{
+						TaskId: taskId,
+					})
+				}
+				return
+			} else if req.Method == "createDir" {
+				safeName, err := filenamify.Filenamify(req.Name, filenamify.Options{})
+				if err != nil {
+					c.String(500, err.Error())
+				}
+				err = os.Mkdir(path.Join(filePath, safeName), 0755)
+				if err != nil {
+					c.String(500, err.Error())
+				} else {
+					c.JSON(200, CreateDirResponse{
+						Name: safeName,
+						Url:  path.Join(uri, url.PathEscape(safeName)),
+					})
+				}
+				return
 			}
-			return
 		}
 
 		c.String(400, "400 bad request")

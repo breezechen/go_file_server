@@ -3,6 +3,7 @@ module github.com/breezechen/go_file_server
 go 1.20
 
 require (
+	github.com/flytam/filenamify v1.1.2
 	github.com/gin-gonic/gin v1.9.0
 	github.com/google/uuid v1.3.0
 	github.com/melbahja/got v0.7.0

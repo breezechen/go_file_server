@@ -18,14 +18,53 @@
           <n-button
             type="primary"
             dashed
-            @click="remoteDownloadDialogVisible = true"
+            @click="createDirDialogVisible = true"
           >
-            远程下载
+            新建文件夹
           </n-button>
           <n-button type="primary" dashed @click="uplaodDialogVisible = true">
             上传文件
           </n-button>
+          <n-button
+            type="primary"
+            dashed
+            @click="remoteDownloadDialogVisible = true"
+          >
+            远程下载
+          </n-button>
         </div>
+
+        <n-modal
+          title="新建文件夹"
+          v-model:show="createDirDialogVisible"
+          preset="card"
+        >
+          <div>
+            <n-form :model="createDirInfo">
+              <n-form-item path="name" label="文件夹名称">
+                <n-input
+                  placeholder="文件夹名称"
+                  v-model:value="createDirInfo.name"
+                />
+              </n-form-item>
+              <n-row :gutter="[0, 24]">
+                <n-col :span="24">
+                  <div style="display: flex; justify-content: flex-end">
+                    <n-button
+                      :disabled="createDirInfo.name == ''"
+                      round
+                      type="primary"
+                      @click="createDir"
+                    >
+                      创建
+                    </n-button>
+                  </div>
+                </n-col>
+              </n-row>
+            </n-form>
+          </div>
+        </n-modal>
+
         <n-modal
           title="远程下载"
           v-model:show="remoteDownloadDialogVisible"
@@ -143,8 +182,14 @@
           );
           const remoteDownloadDialogVisible = ref(false);
           const uplaodDialogVisible = ref(false);
+          const createDirDialogVisible = ref(false);
           const downloadInfo = ref({
+            method: "download",
             url: "",
+          });
+          const createDirInfo = ref({
+            method: "createDir",
+            name: "",
           });
           const data = reactive({
             tableHeaders: [
@@ -217,6 +262,18 @@
               });
           }
 
+          function createDir() {
+            axios
+              .post(".", createDirInfo.value)
+              .then((res) => {
+                createDirInfo.value.name = "";
+                window.location.href = res.data.url;
+              })
+              .catch((err) => {
+                message.error(`创建目录失败: ${err.response.data}`);
+              });
+          }
+
           return {
             remoteDownloadDialogVisible,
             uplaodDialogVisible,
@@ -224,6 +281,9 @@
             downloadInfo,
             download,
             theme: themeRef,
+            createDirDialogVisible,
+            createDirInfo,
+            createDir,
           };
         },
       });
