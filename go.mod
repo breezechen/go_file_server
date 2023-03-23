@@ -4,6 +4,8 @@ go 1.20
 
 require (
 	github.com/gin-gonic/gin v1.9.0
+	github.com/google/uuid v1.3.0
+	github.com/melbahja/got v0.7.0
 	github.com/urfave/cli/v2 v2.25.0
 )
 

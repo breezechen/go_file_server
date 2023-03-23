@@ -1,0 +1,19 @@
+POST http://172.18.37.250:9008/test HTTP/1.1
+content-type: application/json
+
+{
+    "url": "http://103.204.172.153/downloads/CorelDRAW%20Graphics%20Suite%20X8%20Ru-En%20Portable.rar"
+}
+###
+
+POST  http://172.18.37.250:9008/:tasks HTTP/1.1
+content-type: application/json
+
+{
+    "or": [
+        {
+            "taskIds" : [],
+            "status" : ""
+        }
+    ]
+}

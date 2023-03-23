@@ -3,66 +3,223 @@
     <meta charset="UTF-8" />
     <meta http-equiv="X-UA-Compatible" content="IE=edge" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <link
-      rel="stylesheet"
-      href="https://unpkg.com/element-plus@2.3.1/dist/index.css"
-    />
+    <script src="https://unpkg.com/vue@3.2.47"></script>
+    <script src="https://unpkg.com/naive-ui@2.34.3"></script>
+    <script src="https://unpkg.com/axios@1.3.4"></script>
     <title id="title"></title>
   </head>
   <body>
-    <div id="upload">
-      <div id="app">
-        <h1>上传文件</h1>
-        <el-upload name="files" class="upload-demo" drag action="./" multiple>
-          <el-icon class="el-icon--upload"><upload-filled /></el-icon>
-          <div class="el-upload__text">
-            将文件拖放到此处 或者 <em>点击此处上传</em>
+    <div id="app">
+      <div>
+        <div id="top_header" style="display: flex; gap: 10px">
+          <n-button type="primary" @click="remoteDownloadDialogVisible = true">
+            远程下载
+          </n-button>
+          <n-button type="primary" @click="uplaodDialogVisible = true">
+            上传文件
+          </n-button>
+        </div>
+        <n-modal
+          title="远程下载"
+          v-model:show="remoteDownloadDialogVisible"
+          preset="card"
+        >
+          <div>
+            <n-form :model="downloadInfo">
+              <n-form-item path="url" label="Url">
+                <n-input
+                  v-model:value="downloadInfo.url"
+                  @keydown.enter.prevent
+                />
+              </n-form-item>
+              <n-row :gutter="[0, 24]">
+                <n-col :span="24">
+                  <div style="display: flex; justify-content: flex-end">
+                    <n-button
+                      :disabled="downloadInfo.url == ''"
+                      round
+                      type="primary"
+                      @click="download"
+                    >
+                      下载
+                    </n-button>
+                  </div>
+                </n-col>
+              </n-row>
+            </n-form>
+            <n-data-table :columns="data.tableHeaders" :data="data.tasks" />
           </div>
-        </el-upload>
+        </n-modal>
+
+        <n-modal
+          title="上传文件"
+          v-model:show="uplaodDialogVisible"
+          preset="card"
+        >
+          <n-upload name="files" action="./" multiple>
+            <n-upload-dragger>
+              <div style="margin-bottom: 12px">
+                <n-icon size="48" :depth="3">
+                  <svg
+                    xmlns="http://www.w3.org/2000/svg"
+                    xmlns:xlink="http://www.w3.org/1999/xlink"
+                    viewBox="0 0 640 512"
+                  >
+                    <path
+                      d="M537.6 226.6c4.1-10.7 6.4-22.4 6.4-34.6c0-53-43-96-96-96c-19.7 0-38.1 6-53.3 16.2C367 64.2 315.3 32 256 32c-88.4 0-160 71.6-160 160c0 2.7.1 5.4.2 8.1C40.2 219.8 0 273.2 0 336c0 79.5 64.5 144 144 144h368c70.7 0 128-57.3 128-128c0-61.9-44-113.6-102.4-125.4zM393.4 288H328v112c0 8.8-7.2 16-16 16h-48c-8.8 0-16-7.2-16-16V288h-65.4c-14.3 0-21.4-17.2-11.3-27.3l105.4-105.4c6.2-6.2 16.4-6.2 22.6 0l105.4 105.4c10.1 10.1 2.9 27.3-11.3 27.3z"
+                      fill="currentColor"
+                    ></path>
+                  </svg>
+                </n-icon>
+              </div>
+              <n-text style="font-size: 16px">
+                点击或者拖动文件到该区域来上传
+              </n-text>
+              <n-p depth="3" style="margin: 8px 0 0 0">
+                支持单个或者多个文件上传
+              </n-p>
+            </n-upload-dragger>
+          </n-upload>
+        </n-modal>
+      </div>
+
+      <div id="index">
+        <h1 id="header">LOCATION 的索引</h1>
+        <div id="parentDirLinkBox" style="display: none">
+          <a id="parentDirLink" class="icon up">
+            <span id="parentDirText">[上级目录]</span>
+          </a>
+        </div>
+        <table>
+          <thead>
+            <tr class="header" id="theader">
+              <th id="nameColumnHeader" tabindex="0" role="button">名称</th>
+              <th
+                id="sizeColumnHeader"
+                class="detailsColumn"
+                tabindex="0"
+                role="button"
+              >
+                大小
+              </th>
+              <th
+                id="dateColumnHeader"
+                class="detailsColumn"
+                tabindex="0"
+                role="button"
+              >
+                修改日期
+              </th>
+            </tr>
+          </thead>
+          <tbody id="tbody"></tbody>
+        </table>
       </div>
     </div>
-    <div id="index">
-      <h1 id="header">LOCATION 的索引</h1>
-      <div id="parentDirLinkBox" style="display: none">
-        <a id="parentDirLink" class="icon up">
-          <span id="parentDirText">[上级目录]</span>
-        </a>
-      </div>
-      <table>
-        <thead>
-          <tr class="header" id="theader">
-            <th id="nameColumnHeader" tabindex="0" role="button">名称</th>
-            <th
-              id="sizeColumnHeader"
-              class="detailsColumn"
-              tabindex="0"
-              role="button"
-            >
-              大小
-            </th>
-            <th
-              id="dateColumnHeader"
-              class="detailsColumn"
-              tabindex="0"
-              role="button"
-            >
-              修改日期
-            </th>
-          </tr>
-        </thead>
-        <tbody id="tbody"></tbody>
-      </table>
-    </div>
-    <script src="https://unpkg.com/vue@3.2.47"></script>
-    <script src="https://unpkg.com/axios@1.3.4"></script>
-    <script src="https://unpkg.com/element-plus@2.3.1"></script>
-    <script src="https://unpkg.com/@element-plus/icons-vue@2.1.0"></script>
     <script>
-      const app = Vue.createApp();
-      app.use(ElementPlus);
-      for (const [key, component] of Object.entries(ElementPlusIconsVue)) {
-        app.component(key, component);
-      }
+      const {createApp, ref, reactive, computed, watch} = Vue;
+      const {createDiscreteApi, darkTheme, lightTheme} = naive;
+
+      const app = createApp({
+        setup() {
+          const themeRef = ref("light");
+          const configProviderPropsRef = computed(() => ({
+            theme: themeRef.value === "light" ? lightTheme : darkTheme,
+          }));
+
+          const {message, notification, dialog, loadingBar} = createDiscreteApi(
+            ["message", "dialog", "notification", "loadingBar"],
+            {
+              configProviderProps: configProviderPropsRef,
+            }
+          );
+          const remoteDownloadDialogVisible = ref(false);
+          const uplaodDialogVisible = ref(false);
+          const downloadInfo = ref({
+            url: "",
+          });
+          const data = reactive({
+            tableHeaders: [
+              {
+                title: "文件路径",
+                key: "filepath",
+              },
+              {
+                title: "进度",
+                key: "progress",
+                width: 160,
+              },
+            ],
+            tasks: [],
+            timer: null,
+            taskIds: [],
+          });
+
+          function refreshTasks() {
+            let conditions = [{status: "downloading"}];
+            if (data.taskIds.length > 0) {
+              conditions.push({taskIds: data.taskIds});
+            }
+
+            axios
+              .post("/:tasks", {or: conditions})
+              .then((res) => {
+                tasks = res.data.tasks;
+                for (let i = 0; i < tasks.length; i++) {
+                  progress = "--%";
+                  if (tasks[i].status.status == "finished") {
+                    progress = "已完成";
+                  } else if (tasks[i].status.status == "failed") {
+                    progress = "下载失败";
+                  } else if (tasks[i].status.totalsize > 0) {
+                    progress = `${Math.round(
+                      (tasks[i].status.downloaded / tasks[i].status.totalsize) *
+                        100
+                    )}%`;
+                  }
+                  tasks[i].progress = tasks[i].status.speed + " " + progress;
+                }
+                data.tasks = tasks;
+              })
+              .catch((err) => {
+                message.error("获取下载任务失败");
+              });
+          }
+
+          watch(remoteDownloadDialogVisible, (val) => {
+            if (val) {
+              data.timer = setInterval(refreshTasks, 1000);
+            } else {
+              clearInterval(data.timer);
+              data.taskIds = [];
+            }
+          });
+
+          function download() {
+            axios
+              .post(".", downloadInfo.value)
+              .then((res) => {
+                message.success("提交下载成功");
+                downloadInfo.value.url = "";
+                data.taskIds.push(res.data.taskId);
+                refreshTasks();
+              })
+              .catch((err) => {
+                message.error(`提交下载失败: ${err.response.data}`);
+              });
+          }
+
+          return {
+            remoteDownloadDialogVisible,
+            uplaodDialogVisible,
+            data,
+            downloadInfo,
+            download,
+            theme: themeRef,
+          };
+        },
+      });
+      app.use(naive);
       app.mount("#app");
     </script>
   </body>
