@@ -11,11 +11,18 @@
   <body>
     <div id="app">
       <div>
-        <div id="top_header" style="display: flex; gap: 10px">
-          <n-button type="primary" @click="remoteDownloadDialogVisible = true">
+        <div
+          id="top_header"
+          style="display: flex; gap: 10px; margin: 10px 0 0 10px"
+        >
+          <n-button
+            type="primary"
+            dashed
+            @click="remoteDownloadDialogVisible = true"
+          >
             远程下载
           </n-button>
-          <n-button type="primary" @click="uplaodDialogVisible = true">
+          <n-button type="primary" dashed @click="uplaodDialogVisible = true">
             上传文件
           </n-button>
         </div>
@@ -26,8 +33,9 @@
         >
           <div>
             <n-form :model="downloadInfo">
-              <n-form-item path="url" label="Url">
+              <n-form-item path="url" label="文件URL">
                 <n-input
+                  placeholder="文件URL, 支持 http/https"
                   v-model:value="downloadInfo.url"
                   @keydown.enter.prevent
                 />
