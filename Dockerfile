@@ -1,15 +1,17 @@
 ## We'll choose the incredibly lightweight
 ## Go alpine image to work with
-FROM golang:1.11.1 AS builder
+FROM golang:1.20 AS builder
 
 ## We create an /app directory in which
 ## we'll put all of our project code
 RUN mkdir /app
 WORKDIR /app
 
+RUN go env -w GOPROXY=https://goproxy.cn,direct
+
 # Download Go modules
 COPY go.mod go.sum ./
-RUN go mod download
+RUN go mod download && go mod verify
 
 ADD . /app
 ## We want to build our application's binary executable
