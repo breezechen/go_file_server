@@ -22,7 +22,7 @@
           >
             新建文件夹
           </n-button>
-          <n-button type="primary" dashed @click="uplaodDialogVisible = true">
+          <n-button type="primary" dashed @click="uploadDialogVisible = true">
             上传文件
           </n-button>
           <n-button
@@ -31,6 +31,9 @@
             @click="remoteDownloadDialogVisible = true"
           >
             远程下载
+          </n-button>
+          <n-button type="error" dashed @click="deleteDialogVisible = true">
+            删除文件
           </n-button>
         </div>
 
@@ -57,6 +60,37 @@
                       @click="createDir"
                     >
                       创建
+                    </n-button>
+                  </div>
+                </n-col>
+              </n-row>
+            </n-form>
+          </div>
+        </n-modal>
+
+        <n-modal
+          title="删除文件"
+          v-model:show="deleteDialogVisible"
+          preset="card"
+        >
+          <div>
+            <n-form :model="deleteFileInfo">
+              <n-form-item path="name" label="文件/文件夹 名称">
+                <n-input
+                  placeholder="文件/文件夹 名称"
+                  v-model:value="deleteFileInfo.name"
+                />
+              </n-form-item>
+              <n-row :gutter="[0, 24]">
+                <n-col :span="24">
+                  <div style="display: flex; justify-content: flex-end">
+                    <n-button
+                      :disabled="deleteFileInfo.name == ''"
+                      round
+                      type="primary"
+                      @click="deleteFile"
+                    >
+                      删除
                     </n-button>
                   </div>
                 </n-col>
@@ -100,7 +134,7 @@
 
         <n-modal
           title="上传文件"
-          v-model:show="uplaodDialogVisible"
+          v-model:show="uploadDialogVisible"
           preset="card"
         >
           <n-upload name="files" action="./" multiple>
@@ -181,14 +215,19 @@
             }
           );
           const remoteDownloadDialogVisible = ref(false);
-          const uplaodDialogVisible = ref(false);
+          const uploadDialogVisible = ref(false);
           const createDirDialogVisible = ref(false);
+          const deleteDialogVisible = ref(false);
           const downloadInfo = ref({
             method: "download",
             url: "",
           });
           const createDirInfo = ref({
             method: "createDir",
+            name: "",
+          });
+          const deleteFileInfo = ref({
+            method: "deleteFile",
             name: "",
           });
           const data = reactive({
@@ -274,9 +313,21 @@
               });
           }
 
+          function deleteFile() {
+            axios
+              .post(".", deleteFileInfo.value)
+              .then((res) => {
+                deleteFileInfo.value.name = "";
+                message.success("删除文件成功");
+              })
+              .catch((err) => {
+                message.error(`删除文件失败: ${err.response.data}`);
+              });
+          }
+
           return {
             remoteDownloadDialogVisible,
-            uplaodDialogVisible,
+            uploadDialogVisible,
             data,
             downloadInfo,
             download,
@@ -284,6 +335,9 @@
             createDirDialogVisible,
             createDirInfo,
             createDir,
+            deleteDialogVisible,
+            deleteFileInfo,
+            deleteFile,
           };
         },
       });

@@ -8,6 +8,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/flytam/filenamify"
@@ -272,6 +273,29 @@ func handleListTask(c *gin.Context) {
 	})
 }
 
+func exists(path string) (bool, error) {
+	_, err := os.Stat(path)
+	if err == nil {
+		return true, nil
+	}
+	if os.IsNotExist(err) {
+		return false, nil
+	}
+	return false, err
+}
+
+func isSubDir(parent string, child string) bool {
+	parent, err := filepath.Abs(parent)
+	if err != nil {
+		return false
+	}
+	child, err = filepath.Abs(child)
+	if err != nil {
+		return false
+	}
+	return child == parent || strings.HasPrefix(child, parent+string(os.PathSeparator))
+}
+
 func start_server(c *cli.Context) error {
 	port := c.String("port")
 	dir := c.String("dir")
@@ -343,7 +367,14 @@ func start_server(c *cli.Context) error {
 				if err != nil {
 					c.String(500, err.Error())
 				}
-				err = os.Mkdir(path.Join(filePath, safeName), 0755)
+
+				createdDirPath := path.Join(filePath, safeName)
+				if !isSubDir(dir, createdDirPath) {
+					c.String(400, "400 bad request")
+					return
+				}
+
+				err = os.Mkdir(createdDirPath, 0755)
 				if err != nil {
 					c.String(500, err.Error())
 				} else {
@@ -351,6 +382,25 @@ func start_server(c *cli.Context) error {
 						Name: safeName,
 						Url:  path.Join(uri, url.PathEscape(safeName)),
 					})
+				}
+				return
+			} else if req.Method == "deleteFile" {
+				deletedFilePath := path.Join(filePath, req.Name)
+				if ok, _ := exists(deletedFilePath); !ok {
+					c.String(404, "file not found")
+					return
+				}
+
+				if !isSubDir(dir, deletedFilePath) {
+					c.String(400, "400 bad request")
+					return
+				}
+
+				err := os.RemoveAll(deletedFilePath)
+				if err != nil {
+					c.String(500, err.Error())
+				} else {
+					c.String(200, "200 ok")
 				}
 				return
 			}
