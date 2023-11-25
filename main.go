@@ -4,6 +4,7 @@ import (
 	_ "embed"
 	"fmt"
 	"log"
+	"mime"
 	"net/url"
 	"os"
 	"path"
@@ -301,6 +302,7 @@ func start_server(c *cli.Context) error {
 	dir := c.String("dir")
 	rootDir = dir
 	r := gin.Default()
+	mime.AddExtensionType(".apk", "application/vnd.android.package-archive")
 
 	r.GET("/*uri", func(c *gin.Context) {
 		uri := c.Param("uri")
