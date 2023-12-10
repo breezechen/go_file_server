@@ -303,6 +303,8 @@ func start_server(c *cli.Context) error {
 	rootDir = dir
 	r := gin.Default()
 	mime.AddExtensionType(".apk", "application/vnd.android.package-archive")
+	mime.AddExtensionType(".ipa", "application/vnd.iphone")
+	mime.AddExtensionType(".txt", "text/plain")
 
 	r.GET("/*uri", func(c *gin.Context) {
 		uri := c.Param("uri")
@@ -321,6 +323,7 @@ func start_server(c *cli.Context) error {
 			c.Data(200, "text/html", []byte(genIndexHtml(dir, uri)))
 			return
 		}
+
 		c.File(path.Join(dir, uri))
 	})
 	r.POST("/*uri", func(c *gin.Context) {
