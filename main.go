@@ -225,7 +225,7 @@ func genIndexHtml(rootDir string, uri string) string {
 		if item.IsDir() {
 			info, _ := item.Info()
 			html += fmt.Sprintf("<script>addRow('%s', '%s', 1, 0, '', %d, '%s');</script>\n",
-				item.Name(),
+				strings.ReplaceAll(item.Name(), "'", "\\'"),
 				url.PathEscape(item.Name()),
 				info.ModTime().Unix(),
 				info.ModTime().Format("2006-01-02 15:04:05"),
@@ -237,7 +237,7 @@ func genIndexHtml(rootDir string, uri string) string {
 		if !item.IsDir() {
 			info, _ := item.Info()
 			html += fmt.Sprintf("<script>addRow('%s', '%s', 0, %d, '%s', %d, '%s');</script>\n",
-				item.Name(),
+				strings.ReplaceAll(item.Name(), "'", "\\'"),
 				url.PathEscape(item.Name()),
 				info.Size(),
 				humanReadableSize(info.Size()),
