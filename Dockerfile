@@ -15,7 +15,7 @@ RUN go mod download && go mod verify
 
 ADD . /app
 ## We want to build our application's binary executable
-RUN CGO_ENABLED=0 GOOS=linux go build -o /file_server ./...
+RUN CGO_ENABLED=0 GOOS=linux go build -o /file_server
 
 ## the lightweight scratch image we'll
 ## run our application within
