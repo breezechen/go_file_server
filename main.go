@@ -12,7 +12,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/flytam/filenamify"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"github.com/melbahja/got"
@@ -32,9 +31,10 @@ var (
 )
 
 type PostRequest struct {
-	Url    string `json:"url"`
-	Method string `json:"method"`
-	Name   string `json:"name"`
+	Url    string   `json:"url"`
+	Method string   `json:"method"`
+	Name   string   `json:"name"`
+	Logs   []string `json:"logs"`
 }
 
 type DownloadResponse struct {
@@ -62,7 +62,7 @@ type ListTaskResponse struct {
 
 type DownloadStatus struct {
 	Status     string `json:"status"`
-	Totalsize  uint64 `json:"totalsize"`
+	TotalSize  uint64 `json:"totalSize"`
 	Downloaded uint64 `json:"downloaded"`
 	Speed      string `json:"speed"`
 	ErrMsg     string `json:"errMsg"`
@@ -80,14 +80,14 @@ type DownloadTaskInfo struct {
 
 type DownloadManager struct {
 	Tasks             map[string]*DownloadTaskInfo
-	taskToDownlaodMap map[string]*got.Download
+	taskToDownloadMap map[string]*got.Download
 	downloadToTaskMap map[*got.Download]string
 }
 
 func NewDownloadManager() *DownloadManager {
 	return &DownloadManager{
 		Tasks:             make(map[string]*DownloadTaskInfo),
-		taskToDownlaodMap: make(map[string]*got.Download),
+		taskToDownloadMap: make(map[string]*got.Download),
 		downloadToTaskMap: make(map[*got.Download]string),
 	}
 }
@@ -122,12 +122,12 @@ func (dm *DownloadManager) ProgressFunc(d *got.Download) {
 		dm.Tasks[taskId].Status.Status = "downloading"
 	}
 	dm.Tasks[taskId].Status.Downloaded = downloaded
-	dm.Tasks[taskId].Status.Totalsize = d.TotalSize()
+	dm.Tasks[taskId].Status.TotalSize = d.TotalSize()
 	dm.Tasks[taskId].Status.Speed = humanReadableSize(int64(d.AvgSpeed())) + "/s"
 }
 
 func (dm *DownloadManager) CompleteTask(taskId string) {
-	download := dm.taskToDownlaodMap[taskId]
+	download := dm.taskToDownloadMap[taskId]
 	download.StopProgress = true
 	dm.Tasks[taskId].Status.Status = "finished"
 	var timeNow = time.Now()
@@ -135,7 +135,7 @@ func (dm *DownloadManager) CompleteTask(taskId string) {
 }
 
 func (dm *DownloadManager) FailTask(taskId string, errMsg string) {
-	download := dm.taskToDownlaodMap[taskId]
+	download := dm.taskToDownloadMap[taskId]
 	download.StopProgress = true
 	dm.Tasks[taskId].Status.Status = "failed"
 	dm.Tasks[taskId].Status.ErrMsg = errMsg
@@ -171,7 +171,7 @@ func (dm *DownloadManager) AddTask(url, dir string) (string, error) {
 	}
 
 	dm.downloadToTaskMap[download] = taskId
-	dm.taskToDownlaodMap[taskId] = download
+	dm.taskToDownloadMap[taskId] = download
 
 	go func() {
 		if err := download.Start(); err != nil {
@@ -249,6 +249,30 @@ func genIndexHtml(rootDir string, uri string) string {
 	return html
 }
 
+func genJson(rootDir string, uri string) []map[string]interface{} {
+	items, err := os.ReadDir(path.Join(rootDir, uri))
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	files := make([]map[string]interface{}, 0)
+
+	for _, item := range items {
+		info, _ := item.Info()
+		file := make(map[string]interface{})
+		file["name"] = item.Name()
+		file["url"] = url.PathEscape(item.Name())
+		file["size"] = info.Size()
+		file["sizeStr"] = humanReadableSize(info.Size())
+		file["modTime"] = info.ModTime().Unix()
+		file["modTimeStr"] = info.ModTime().Format("2006-01-02 15:04:05")
+		file["isDir"] = item.IsDir()
+		files = append(files, file)
+	}
+
+	return files
+}
+
 func handleListTask(c *gin.Context) {
 	req := &ListTaskRequest{}
 	err := c.BindJSON(req)
@@ -320,7 +344,14 @@ func start_server(c *cli.Context) error {
 			return
 		}
 		if stat.IsDir() {
-			c.Data(200, "text/html", []byte(genIndexHtml(dir, uri)))
+			// is args has ?json, return json
+			_, ok := c.GetQuery("json")
+			if ok {
+				// return json
+				c.JSON(200, genJson(dir, uri))
+			} else {
+				c.Data(200, "text/html", []byte(genIndexHtml(dir, uri)))
+			}
 			return
 		}
 
@@ -368,18 +399,14 @@ func start_server(c *cli.Context) error {
 				}
 				return
 			} else if req.Method == "createDir" {
-				safeName, err := filenamify.Filenamify(req.Name, filenamify.Options{})
-				if err != nil {
-					c.String(500, err.Error())
-				}
-
+				safeName := req.Name
 				createdDirPath := path.Join(filePath, safeName)
 				if !isSubDir(dir, createdDirPath) {
 					c.String(400, "400 bad request")
 					return
 				}
 
-				err = os.Mkdir(createdDirPath, 0755)
+				err = os.MkdirAll(createdDirPath, 0755)
 				if err != nil {
 					c.String(500, err.Error())
 				} else {
@@ -408,6 +435,10 @@ func start_server(c *cli.Context) error {
 					c.String(200, "200 ok")
 				}
 				return
+			} else if req.Method == "logging" {
+				saveLog(filePath, req.Name, req.Logs)
+				c.String(200, "200 ok")
+				return
 			}
 		}
 
@@ -415,6 +446,31 @@ func start_server(c *cli.Context) error {
 	})
 	r.Run(":" + port)
 	return nil
+}
+
+func saveLog(dir string, name string, logs []string) {
+	logFile := path.Join(dir, name+".log")
+	// if not exists, create it
+	if ok, _ := exists(logFile); !ok {
+		file, err := os.Create(logFile)
+		if err != nil {
+			return
+		}
+		defer file.Close()
+	}
+
+	file, err := os.OpenFile(logFile, os.O_APPEND|os.O_WRONLY, 0644)
+	if err != nil {
+		return
+	}
+
+	defer file.Close()
+
+	for _, log := range logs {
+		file.WriteString(log)
+	}
+
+	file.Sync()
 }
 
 func main() {
