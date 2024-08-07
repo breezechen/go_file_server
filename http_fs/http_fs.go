@@ -54,15 +54,25 @@ func NewHttpFs(baseURL string) *HttpFs {
 	}
 }
 
+// cleanPath cleans and normalizes a given path
+func cleanPath(p string) string {
+	return filepath.ToSlash(filepath.Clean(p))
+}
+
 // doRequest sends an HTTP request and decodes the response into the result interface
 func (fs *HttpFs) doRequest(method, url string, body interface{}, result interface{}) error {
 	var bodyReader io.Reader
 	if body != nil {
-		jsonBody, err := json.Marshal(body)
-		if err != nil {
-			return fmt.Errorf("failed to marshal request body: %w", err)
+		switch v := body.(type) {
+		case []byte:
+			bodyReader = bytes.NewBuffer(v)
+		default:
+			jsonBody, err := json.Marshal(body)
+			if err != nil {
+				return fmt.Errorf("failed to marshal request body: %w", err)
+			}
+			bodyReader = bytes.NewBuffer(jsonBody)
 		}
-		bodyReader = bytes.NewBuffer(jsonBody)
 	}
 	req, err := http.NewRequest(method, url, bodyReader)
 	if err != nil {
@@ -90,24 +100,31 @@ func (fs *HttpFs) doRequest(method, url string, body interface{}, result interfa
 
 // ListFiles lists the files and directories under a specified path, returning []FileInfo
 func (fs *HttpFs) ListFiles(path string) ([]FileInfo, error) {
-	url := fs.BaseURL + path + "?json"
+	url := fs.BaseURL + cleanPath(path) + "?json"
 	var result []FileInfo
 	if err := fs.doRequest("GET", url, nil, &result); err != nil {
 		return nil, err
 	}
 
 	for i := range result {
-		fullPath := filepath.Join(path, result[i].URL)
-		fullPath = filepath.Clean(fullPath)
-		fullPath = filepath.ToSlash(fullPath)
-		result[i].FullUrl = fs.BaseURL + fullPath
+		result[i].FullUrl = fs.BaseURL + cleanPath(filepath.Join(path, result[i].URL))
 	}
 	return result, nil
 }
 
 // Stat returns the FileInfo for a given path
 func (fs *HttpFs) Stat(path string) (*FileInfo, error) {
-	dir := filepath.Dir(path)
+	// check if the path is the root directory
+	if path == "/" {
+		return &FileInfo{
+			Name:    "/",
+			URL:     "/",
+			FullUrl: fs.BaseURL + "/",
+			IsDir:   true,
+		}, nil
+	}
+
+	dir := cleanPath(filepath.Dir(path))
 	filename := filepath.Base(path)
 
 	files, err := fs.ListFiles(dir)
@@ -135,7 +152,7 @@ func (fs *HttpFs) CreateDir(path string) error {
 
 // DeleteFile deletes a file or directory
 func (fs *HttpFs) DeleteFile(path string) error {
-	url := fs.BaseURL + filepath.ToSlash(filepath.Dir(path))
+	url := fs.BaseURL + cleanPath(filepath.Dir(path))
 	reqBody := map[string]string{
 		"method": "deleteFile",
 		"name":   filepath.Base(path),
@@ -145,7 +162,7 @@ func (fs *HttpFs) DeleteFile(path string) error {
 
 // WriteLog writes logs to a specified file
 func (fs *HttpFs) WriteLog(path string, logs []string) error {
-	url := fs.BaseURL + filepath.ToSlash(filepath.Dir(path))
+	url := fs.BaseURL + cleanPath(filepath.Dir(path))
 	reqBody := map[string]interface{}{
 		"method": "logging",
 		"name":   filepath.Base(path),
@@ -154,8 +171,8 @@ func (fs *HttpFs) WriteLog(path string, logs []string) error {
 	return fs.doRequest("POST", url, reqBody, nil)
 }
 
-// Copy copies a local file or directory to the server, preserving the directory structure
-func (fs *HttpFs) Copy(srcPath, destPath string) error {
+// CopyFrom copies a local file or directory to the server, preserving the directory structure
+func (fs *HttpFs) CopyFrom(srcPath, destPath string) error {
 	return filepath.Walk(srcPath, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			return err
@@ -166,9 +183,7 @@ func (fs *HttpFs) Copy(srcPath, destPath string) error {
 			return err
 		}
 
-		destFilePath := filepath.Join(destPath, relPath)
-		// windows path separator fix
-		destFilePath = filepath.ToSlash(destFilePath)
+		destFilePath := cleanPath(filepath.Join(destPath, relPath))
 		if info.IsDir() {
 			return fs.CreateDir(destFilePath)
 		}
@@ -176,48 +191,143 @@ func (fs *HttpFs) Copy(srcPath, destPath string) error {
 	})
 }
 
+// CopyTo copies a remote file or directory to the local system
+func (fs *HttpFs) CopyTo(srcPath, destPath string) error {
+	// traverse the remote directory and create the local directory
+	fi, err := fs.Stat(srcPath)
+	if err != nil {
+		return err
+	}
+
+	if !fi.IsDir {
+		return fs.DownloadFile(srcPath, destPath)
+	}
+
+	return fs.DownloadDir(srcPath, destPath)
+}
+
+func (fs *HttpFs) DownloadFile(srcPath, destPath string) error {
+	// srcPath is the uri of the file to download
+	// destPath is the local path to save the file
+	url := fs.BaseURL + srcPath
+	resp, err := fs.Client.Get(url)
+	if err != nil {
+		return fmt.Errorf("failed to download file: %w", err)
+	}
+
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("download failed with status: %s", resp.Status)
+	}
+
+	// check if destPath is a directory
+	fi, err := os.Stat(destPath)
+	if err == nil && fi.IsDir() {
+		destPath = filepath.Join(destPath, filepath.Base(srcPath))
+	}
+
+	// check the directory of destPath exists
+	if err := os.MkdirAll(filepath.Dir(destPath), os.ModePerm); err != nil {
+		return fmt.Errorf("failed to create directory: %w", err)
+	}
+
+	// create the file
+	file, err := os.Create(destPath)
+	if err != nil {
+		return fmt.Errorf("failed to create file: %w", err)
+	}
+
+	defer file.Close()
+
+	if _, err := io.Copy(file, resp.Body); err != nil {
+		return fmt.Errorf("failed to write file: %w", err)
+	}
+
+	return nil
+}
+
+func (fs *HttpFs) DownloadDir(srcPath, destPath string) error {
+	files, err := fs.ListFiles(srcPath)
+	if err != nil {
+		return err
+	}
+
+	for _, file := range files {
+		destFilePath := filepath.Join(destPath, file.Name)
+		if file.IsDir {
+			err := fs.DownloadDir(file.URL, destFilePath)
+			if err != nil {
+				return err
+			}
+		} else {
+			err := fs.DownloadFile(file.URL, destFilePath)
+			if err != nil {
+				return err
+			}
+		}
+	}
+
+	return nil
+}
+
 // CreateFile uploads a file to the specified directory
 func (fs *HttpFs) CreateFile(destPath, srcFilePath string) error {
-	url := fs.BaseURL + filepath.ToSlash(filepath.Dir(destPath))
-	file, err := os.Open(srcFilePath)
-	if err != nil {
-		return fmt.Errorf("failed to open source file: %w", err)
-	}
-	defer file.Close()
+	return fs.uploadFileFromReader(destPath, srcFilePath, nil)
+}
+
+// CreateFileFromBytes uploads file content from bytes to the specified directory
+func (fs *HttpFs) CreateFileFromBytes(destPath string, data []byte) error {
+	return fs.uploadFileFromReader(destPath, "", bytes.NewReader(data))
+}
+
+func (fs *HttpFs) uploadFileFromReader(destPath, fileName string, reader io.Reader) error {
+	url := fs.BaseURL + cleanPath(filepath.Dir(destPath))
 
 	body := &bytes.Buffer{}
 	writer := multipart.NewWriter(body)
 
 	// Create a form file field
-	formFile, err := writer.CreateFormFile("files", filepath.Base(srcFilePath))
-	if err != nil {
-		return fmt.Errorf("failed to create form file field: %w", err)
+	var formFile io.Writer
+	var err error
+	if reader != nil {
+		formFile, err = writer.CreateFormFile("files", filepath.Base(destPath))
+		if err != nil {
+			return fmt.Errorf("failed to create form file field: %w", err)
+		}
+		_, err = io.Copy(formFile, reader)
+	} else {
+		file, err := os.Open(fileName)
+		if err != nil {
+			return fmt.Errorf("failed to open source file: %w", err)
+		}
+		defer file.Close()
+
+		formFile, err = writer.CreateFormFile("files", filepath.Base(fileName))
+		if err != nil {
+			return fmt.Errorf("failed to create form file field: %w", err)
+		}
+		_, err = io.Copy(formFile, file)
 	}
 
-	// Copy the file content to the form file field
-	if _, err := io.Copy(formFile, file); err != nil {
+	if err != nil {
 		return fmt.Errorf("failed to copy file content: %w", err)
 	}
 
-	// Close the multipart writer to finalize the form data
 	writer.Close()
 
-	// Create a new POST request
 	req, err := http.NewRequest("POST", url, body)
 	if err != nil {
 		return fmt.Errorf("failed to create POST request: %w", err)
 	}
-
-	// Set the Content-Type header to multipart/form-data
 	req.Header.Set("Content-Type", writer.FormDataContentType())
-	// Send the request
+
 	resp, err := fs.Client.Do(req)
 	if err != nil {
 		return fmt.Errorf("failed to send request: %w", err)
 	}
 	defer resp.Body.Close()
 
-	// Check for server-side errors
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("upload failed with status: %s", resp.Status)
 	}
@@ -225,9 +335,17 @@ func (fs *HttpFs) CreateFile(destPath, srcFilePath string) error {
 	return nil
 }
 
+// CreateFileFromUrl creates a file on the server from a URL
+func (fs *HttpFs) CreateFileFromUrl(destPath, url string) error {
+	dir := cleanPath(filepath.Dir(destPath))
+	name := filepath.Base(destPath)
+	_, err := fs.AddDownloadTask(dir, url, name)
+	return err
+}
+
 // AddDownloadTask adds a new download task
 func (fs *HttpFs) AddDownloadTask(path, url, name string) (string, error) {
-	destPath := filepath.ToSlash(filepath.Dir(path))
+	destPath := cleanPath(path)
 	reqBody := map[string]string{
 		"method": "download",
 		"url":    url,
