@@ -374,7 +374,35 @@
       size = 0;
       size_string = "";
     } else {
-      link.setAttribute("download", name);
+      // 对于常见的可在浏览器中显示的文件类型，不设置 download 属性，遵循浏览器默认行为
+      var fileExtension = name.toLowerCase().split('.').pop();
+      var viewableExtensions = [
+        // HTML 文件
+        'html', 'htm', 'xhtml', 'mhtml',
+        // 图片文件
+        'jpg', 'jpeg', 'png', 'gif', 'webp', 'svg', 'bmp', 'ico', 'tiff', 'tif', 'avif', 'jfif',
+        // PDF 文件
+        'pdf',
+        // 视频文件
+        'mp4', 'webm', 'ogg', 'avi', 'mov', 'wmv', 'flv', 'mkv', 'm4v', '3gp', 'mpg', 'mpeg',
+        // 音频文件
+        'mp3', 'wav', 'ogg', 'aac', 'flac', 'm4a', 'wma', 'm4p', 'opus',
+        // 字体文件
+        'woff', 'woff2', 'ttf', 'otf', 'eot',
+        // 文本和代码文件
+        'txt', 'json', 'xml', 'css', 'js', 'ts', 'jsx', 'tsx', 'md', 'csv',
+        'py', 'java', 'c', 'cpp', 'h', 'hpp', 'php', 'rb', 'go', 'rs', 'swift',
+        'yaml', 'yml', 'ini', 'conf', 'config', 'log', 'sh', 'bat', 'ps1',
+        'sql', 'r', 'scala', 'kt', 'dart', 'vue', 'svelte', 'astro'
+      ];
+      
+      if (viewableExtensions.includes(fileExtension)) {
+        // 可在浏览器中查看的文件在新标签页打开
+        link.setAttribute("target", "_blank");
+      } else {
+        // 其他文件类型触发下载
+        link.setAttribute("download", name);
+      }
     }
     link.innerText = name;
     link.href = root + url;
