@@ -1,6 +1,6 @@
 ## We'll choose the incredibly lightweight
 ## Go alpine image to work with
-FROM golang:1.20 AS builder
+FROM golang:1.23.10 AS builder
 
 ## We create an /app directory in which
 ## we'll put all of our project code

@@ -1,13 +1,15 @@
 module github.com/breezechen/go_file_server
 
-go 1.20
+go 1.23.0
+
+toolchain go1.23.10
 
 require (
-	github.com/flytam/filenamify v1.1.2
 	github.com/gin-gonic/gin v1.9.0
 	github.com/google/uuid v1.3.0
 	github.com/melbahja/got v0.7.0
 	github.com/urfave/cli/v2 v2.25.0
+	golang.org/x/net v0.43.0
 )
 
 require (
@@ -31,10 +33,9 @@ require (
 	github.com/ugorji/go/codec v1.2.9 // indirect
 	github.com/xrash/smetrics v0.0.0-20201216005158-039620a65673 // indirect
 	golang.org/x/arch v0.0.0-20210923205945-b76863e36670 // indirect
-	golang.org/x/crypto v0.5.0 // indirect
-	golang.org/x/net v0.7.0 // indirect
-	golang.org/x/sys v0.5.0 // indirect
-	golang.org/x/text v0.7.0 // indirect
+	golang.org/x/crypto v0.41.0 // indirect
+	golang.org/x/sys v0.35.0 // indirect
+	golang.org/x/text v0.28.0 // indirect
 	google.golang.org/protobuf v1.28.1 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )

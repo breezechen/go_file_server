@@ -16,6 +16,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/melbahja/got"
 	"github.com/urfave/cli/v2"
+	"github.com/breezechen/go_file_server/webdav/server"
 )
 
 var (
@@ -327,11 +328,31 @@ func isSubDir(parent string, child string) bool {
 func start_server(c *cli.Context) error {
 	port := c.String("port")
 	dir := c.String("dir")
+	enableWebDAV := c.Bool("webdav")
 	rootDir = dir
 	r := gin.Default()
 	mime.AddExtensionType(".apk", "application/vnd.android.package-archive")
 	mime.AddExtensionType(".ipa", "application/vnd.iphone")
 	mime.AddExtensionType(".txt", "text/plain")
+
+	// Add WebDAV support with middleware
+	if enableWebDAV {
+		webdavHandler := server.NewHandler(dir)
+		r.Use(func(c *gin.Context) {
+			if strings.HasPrefix(c.Request.URL.Path, "/$.dav$/") || c.Request.URL.Path == "/$.dav$" {
+				// Adjust the path for WebDAV handler
+				c.Request.URL.Path = strings.TrimPrefix(c.Request.URL.Path, "/$.dav$")
+				if c.Request.URL.Path == "" {
+					c.Request.URL.Path = "/"
+				}
+				webdavHandler.ServeHTTP(c.Writer, c.Request)
+				c.Abort()
+				return
+			}
+			c.Next()
+		})
+		fmt.Printf("WebDAV enabled at /$.dav$/\n")
+	}
 
 	r.GET("/*uri", func(c *gin.Context) {
 		uri := c.Param("uri")
@@ -464,6 +485,7 @@ func start_server(c *cli.Context) error {
 
 		c.String(400, "400 bad request")
 	})
+	
 	r.Run(":" + port)
 	return nil
 }
@@ -509,6 +531,12 @@ func main() {
 				Aliases: []string{"d"},
 				Value:   ".",
 				Usage:   "root dir",
+			},
+			&cli.BoolFlag{
+				Name:    "webdav",
+				Aliases: []string{"w"},
+				Value:   false,
+				Usage:   "enable WebDAV support",
 			},
 		},
 		Action: start_server,

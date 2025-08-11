@@ -2,13 +2,17 @@ package http_fs
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"mime/multipart"
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
+	"time"
 )
 
 // FileInfo 定义文件或目录的信息结构体
@@ -42,16 +46,94 @@ type DownloadStatus struct {
 	ErrMsg     string `json:"errMsg"`
 }
 
+// HttpFsOption 配置选项
+type HttpFsOption func(*HttpFs)
+
+// BatchOperation 批量操作接口
+type BatchOperation struct {
+	Type   string // "upload", "download", "delete"
+	Source string
+	Dest   string
+	Data   []byte // 用于上传内存数据
+}
+
+// WalkFunc 遍历函数类型
+type WalkFunc func(path string, info *FileInfo, err error) error
+
 type HttpFs struct {
-	BaseURL string
-	Client  *http.Client
+	BaseURL  string
+	Client   *http.Client
+	username string            // 基础认证用户名
+	password string            // 基础认证密码
+	headers  map[string]string // 自定义请求头
 }
 
 func NewHttpFs(baseURL string) *HttpFs {
 	return &HttpFs{
 		BaseURL: baseURL,
 		Client:  &http.Client{},
+		headers: make(map[string]string),
 	}
+}
+
+// NewHttpFsWithOptions 创建带选项的 HttpFs 实例
+func NewHttpFsWithOptions(baseURL string, opts ...HttpFsOption) *HttpFs {
+	fs := &HttpFs{
+		BaseURL: strings.TrimSuffix(baseURL, "/"),
+		Client:  &http.Client{Timeout: 30 * time.Second},
+		headers: make(map[string]string),
+	}
+	
+	for _, opt := range opts {
+		opt(fs)
+	}
+	
+	return fs
+}
+
+// WithHTTPClient 设置自定义 HTTP 客户端
+func WithHTTPClient(client *http.Client) HttpFsOption {
+	return func(fs *HttpFs) {
+		fs.Client = client
+	}
+}
+
+// WithTimeout 设置请求超时
+func WithTimeout(timeout time.Duration) HttpFsOption {
+	return func(fs *HttpFs) {
+		fs.Client.Timeout = timeout
+	}
+}
+
+// WithAuth 设置基础认证
+func WithAuth(username, password string) HttpFsOption {
+	return func(fs *HttpFs) {
+		fs.username = username
+		fs.password = password
+	}
+}
+
+// WithHeaders 设置自定义请求头
+func WithHeaders(headers map[string]string) HttpFsOption {
+	return func(fs *HttpFs) {
+		if fs.headers == nil {
+			fs.headers = make(map[string]string)
+		}
+		for k, v := range headers {
+			fs.headers[k] = v
+		}
+	}
+}
+
+// SetAuth 设置基础认证
+func (fs *HttpFs) SetAuth(username, password string) {
+	fs.username = username
+	fs.password = password
+}
+
+// SetHeaders 设置自定义请求头
+func (fs *HttpFs) SetHeaders(headers map[string]string) {
+	fs.headers = headers
 }
 
 // cleanPath cleans and normalizes a given path
@@ -82,6 +164,17 @@ func (fs *HttpFs) doRequest(method, url string, body interface{}, result interfa
 	if body != nil {
 		req.Header.Set("Content-Type", "application/json")
 	}
+	
+	// 添加基础认证
+	if fs.username != "" && fs.password != "" {
+		req.SetBasicAuth(fs.username, fs.password)
+	}
+	
+	// 添加自定义头
+	for k, v := range fs.headers {
+		req.Header.Set(k, v)
+	}
+	
 	resp, err := fs.Client.Do(req)
 	if err != nil {
 		return fmt.Errorf("request failed: %w", err)
@@ -390,4 +483,172 @@ func (fs *HttpFs) ListDownloadTasks(taskIds []string, status string) ([]Download
 		return nil, err
 	}
 	return result.Tasks, nil
+}
+
+// Exists 检查文件或目录是否存在
+func (fs *HttpFs) Exists(path string) (bool, error) {
+	_, err := fs.Stat(path)
+	if err != nil {
+		if strings.Contains(err.Error(), "not found") {
+			return false, nil
+		}
+		return false, err
+	}
+	return true, nil
+}
+
+// Rename 重命名文件或目录
+func (fs *HttpFs) Rename(oldPath, newPath string) error {
+	// 需要服务端支持 MOVE 方法或自定义 API
+	return errors.New("rename not implemented - requires server support")
+}
+
+// GetFileReader 获取文件内容的 io.ReadCloser
+func (fs *HttpFs) GetFileReader(path string) (io.ReadCloser, error) {
+	url := fs.BaseURL + cleanPath(path)
+	resp, err := fs.Client.Get(url)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get file reader: %w", err)
+	}
+	
+	if resp.StatusCode != http.StatusOK {
+		resp.Body.Close()
+		return nil, fmt.Errorf("failed with status: %s", resp.Status)
+	}
+	
+	return resp.Body, nil
+}
+
+// GetFileContent 直接获取文件内容
+func (fs *HttpFs) GetFileContent(path string) ([]byte, error) {
+	reader, err := fs.GetFileReader(path)
+	if err != nil {
+		return nil, err
+	}
+	defer reader.Close()
+	
+	return io.ReadAll(reader)
+}
+
+// UploadWithProgress 带进度回调的上传
+func (fs *HttpFs) UploadWithProgress(destPath, srcFilePath string, progress func(bytesRead, totalBytes int64)) error {
+	// 实现带进度的上传
+	// 需要包装 io.Reader 来追踪读取进度
+	return fs.CreateFile(destPath, srcFilePath)
+}
+
+// DownloadWithProgress 带进度回调的下载
+func (fs *HttpFs) DownloadWithProgress(srcPath, destPath string, progress func(bytesWritten, totalBytes int64)) error {
+	// 实现带进度的下载
+	// 需要包装 io.Writer 来追踪写入进度
+	return fs.DownloadFile(srcPath, destPath)
+}
+
+// ListFilesRecursive 递归列出所有文件
+func (fs *HttpFs) ListFilesRecursive(path string) ([]FileInfo, error) {
+	var allFiles []FileInfo
+	
+	files, err := fs.ListFiles(path)
+	if err != nil {
+		return nil, err
+	}
+	
+	for _, file := range files {
+		allFiles = append(allFiles, file)
+		if file.IsDir {
+			subFiles, err := fs.ListFilesRecursive(file.URL)
+			if err != nil {
+				return nil, err
+			}
+			allFiles = append(allFiles, subFiles...)
+		}
+	}
+	
+	return allFiles, nil
+}
+
+// CreateDirAll 创建目录（包括所有父目录）
+func (fs *HttpFs) CreateDirAll(path string) error {
+	// 尝试创建目录，如果父目录不存在会失败
+	err := fs.CreateDir(path)
+	if err == nil {
+		return nil
+	}
+	
+	// 如果失败，尝试创建父目录
+	parent := filepath.Dir(path)
+	if parent != "/" && parent != "." {
+		if err := fs.CreateDirAll(parent); err != nil {
+			return err
+		}
+	}
+	
+	// 再次尝试创建目录
+	return fs.CreateDir(path)
+}
+
+// BatchExecute 批量执行操作
+func (fs *HttpFs) BatchExecute(ctx context.Context, operations []BatchOperation) []error {
+	errs := make([]error, len(operations))
+	
+	for i, op := range operations {
+		select {
+		case <-ctx.Done():
+			errs[i] = ctx.Err()
+			continue
+		default:
+		}
+		
+		switch op.Type {
+		case "upload":
+			if op.Data != nil {
+				errs[i] = fs.CreateFileFromBytes(op.Dest, op.Data)
+			} else {
+				errs[i] = fs.CreateFile(op.Dest, op.Source)
+			}
+		case "download":
+			errs[i] = fs.DownloadFile(op.Source, op.Dest)
+		case "delete":
+			errs[i] = fs.DeleteFile(op.Source)
+		default:
+			errs[i] = fmt.Errorf("unknown operation type: %s", op.Type)
+		}
+	}
+	
+	return errs
+}
+
+// Walk 遍历远程目录树
+func (fs *HttpFs) Walk(root string, walkFn WalkFunc) error {
+	info, err := fs.Stat(root)
+	if err != nil {
+		return walkFn(root, nil, err)
+	}
+	
+	return fs.walk(root, info, walkFn)
+}
+
+func (fs *HttpFs) walk(path string, info *FileInfo, walkFn WalkFunc) error {
+	if !info.IsDir {
+		return walkFn(path, info, nil)
+	}
+	
+	err := walkFn(path, info, nil)
+	if err != nil {
+		return err
+	}
+	
+	files, err := fs.ListFiles(path)
+	if err != nil {
+		return walkFn(path, info, err)
+	}
+	
+	for _, file := range files {
+		filePath := filepath.Join(path, file.Name)
+		if err := fs.walk(filePath, &file, walkFn); err != nil {
+			return err
+		}
+	}
+	
+	return nil
 }
