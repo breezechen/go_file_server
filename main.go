@@ -1,7 +1,7 @@
 package main
 
 import (
-	_ "embed"
+	"embed"
 	"fmt"
 	"log"
 	"mime"
@@ -24,6 +24,9 @@ var (
 
 	//go:embed index.html
 	indexHtml string
+
+	//go:embed static/*
+	staticFiles embed.FS
 
 	manager = NewDownloadManager()
 
@@ -335,6 +338,23 @@ func start_server(c *cli.Context) error {
 		if uri == "/favicon.ico" {
 			c.Data(200, "image/svg+xml", favicon)
 			return
+		}
+
+		// Handle static files
+		if strings.HasPrefix(uri, "/static/") {
+			staticPath := strings.TrimPrefix(uri, "/")
+			data, err := staticFiles.ReadFile(staticPath)
+			if err == nil {
+				// Determine content type based on file extension
+				contentType := "application/octet-stream"
+				if strings.HasSuffix(uri, ".js") {
+					contentType = "application/javascript"
+				} else if strings.HasSuffix(uri, ".css") {
+					contentType = "text/css"
+				}
+				c.Data(200, contentType, data)
+				return
+			}
 		}
 
 		filePath := path.Join(dir, uri)
