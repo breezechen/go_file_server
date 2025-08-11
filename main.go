@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"mime"
+	"net/http"
 	"net/url"
 	"os"
 	"path"
@@ -12,11 +13,12 @@ import (
 	"strings"
 	"time"
 
+	"github.com/breezechen/go_file_server/auth"
+	"github.com/breezechen/go_file_server/webdav/server"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"github.com/melbahja/got"
 	"github.com/urfave/cli/v2"
-	"github.com/breezechen/go_file_server/webdav/server"
 )
 
 var (
@@ -329,8 +331,34 @@ func start_server(c *cli.Context) error {
 	port := c.String("port")
 	dir := c.String("dir")
 	enableWebDAV := c.Bool("webdav")
+	username := c.String("username")
+	password := c.String("password")
+	requireReadAuth := c.Bool("auth-read")
+	requireWriteAuth := c.Bool("auth-write")
+
 	rootDir = dir
+
+	// 设置认证配置
+	var authConfig *auth.AuthConfig
+	if username != "" && password != "" {
+		authConfig = auth.NewAuthConfig(username, password)
+		authConfig.SetReadPermission(requireReadAuth)
+		authConfig.SetWritePermission(requireWriteAuth)
+
+		fmt.Printf("Authentication enabled:\n")
+		fmt.Printf("  Read operations: %s\n", map[bool]string{true: "requires auth", false: "public"}[requireReadAuth])
+		fmt.Printf("  Write operations: %s\n", map[bool]string{true: "requires auth", false: "public"}[requireWriteAuth])
+	} else {
+		fmt.Println("Authentication disabled (no username/password provided)")
+	}
+
 	r := gin.Default()
+
+	// 添加认证中间件
+	if authConfig != nil {
+		r.Use(authConfig.GinMiddleware())
+	}
+
 	mime.AddExtensionType(".apk", "application/vnd.android.package-archive")
 	mime.AddExtensionType(".ipa", "application/vnd.iphone")
 	mime.AddExtensionType(".txt", "text/plain")
@@ -338,13 +366,26 @@ func start_server(c *cli.Context) error {
 	// Add WebDAV support with middleware
 	if enableWebDAV {
 		webdavHandler := server.NewHandler(dir)
+
 		r.Use(func(c *gin.Context) {
 			if strings.HasPrefix(c.Request.URL.Path, "/$.dav$/") || c.Request.URL.Path == "/$.dav$" {
 				// Adjust the path for WebDAV handler
+				originalPath := c.Request.URL.Path
 				c.Request.URL.Path = strings.TrimPrefix(c.Request.URL.Path, "/$.dav$")
 				if c.Request.URL.Path == "" {
 					c.Request.URL.Path = "/"
 				}
+
+				// 检查WebDAV请求是否需要认证
+				if authConfig != nil && authConfig.IsAuthRequired(c.Request.Method, originalPath) {
+					username, password, hasAuth := c.Request.BasicAuth()
+					if !hasAuth || !authConfig.ValidateCredentials(username, password) {
+						c.Header("WWW-Authenticate", `Basic realm="`+authConfig.Realm+`"`)
+						c.AbortWithStatus(http.StatusUnauthorized)
+						return
+					}
+				}
+
 				webdavHandler.ServeHTTP(c.Writer, c.Request)
 				c.Abort()
 				return
@@ -485,7 +526,7 @@ func start_server(c *cli.Context) error {
 
 		c.String(400, "400 bad request")
 	})
-	
+
 	r.Run(":" + port)
 	return nil
 }
@@ -537,6 +578,27 @@ func main() {
 				Aliases: []string{"w"},
 				Value:   false,
 				Usage:   "enable WebDAV support",
+			},
+			&cli.StringFlag{
+				Name:    "username",
+				Aliases: []string{"u"},
+				Value:   "",
+				Usage:   "username for authentication",
+			},
+			&cli.StringFlag{
+				Name:  "password",
+				Value: "",
+				Usage: "password for authentication",
+			},
+			&cli.BoolFlag{
+				Name:  "auth-read",
+				Value: false,
+				Usage: "require authentication for read operations (browsing, downloading)",
+			},
+			&cli.BoolFlag{
+				Name:  "auth-write",
+				Value: false,
+				Usage: "require authentication for write operations (upload, delete, create dir)",
 			},
 		},
 		Action: start_server,

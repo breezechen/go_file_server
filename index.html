@@ -201,6 +201,19 @@
       const {createApp, ref, reactive, computed, watch} = Vue;
       const {createDiscreteApi, darkTheme, lightTheme} = naive;
 
+      // 配置axios以自动处理认证
+      axios.interceptors.response.use(
+        response => response,
+        error => {
+          if (error.response && error.response.status === 401) {
+            // 如果需要认证，浏览器会自动弹出认证对话框
+            // 用户输入凭据后，请求会自动重试
+            console.log('Authentication required');
+          }
+          return Promise.reject(error);
+        }
+      );
+
       const app = createApp({
         setup() {
           const themeRef = ref("light");
@@ -297,7 +310,11 @@
                 refreshTasks();
               })
               .catch((err) => {
-                message.error(`提交下载失败: ${err.response.data}`);
+                if (err.response && err.response.status === 401) {
+                  message.error('需要登录才能执行此操作');
+                } else {
+                  message.error(`提交下载失败: ${err.response ? err.response.data : err.message}`);
+                }
               });
           }
 
@@ -309,7 +326,11 @@
                 window.location.href = res.data.url;
               })
               .catch((err) => {
-                message.error(`创建目录失败: ${err.response.data}`);
+                if (err.response && err.response.status === 401) {
+                  message.error('需要登录才能执行此操作');
+                } else {
+                  message.error(`创建目录失败: ${err.response ? err.response.data : err.message}`);
+                }
               });
           }
 
@@ -321,7 +342,11 @@
                 message.success("删除文件成功");
               })
               .catch((err) => {
-                message.error(`删除文件失败: ${err.response.data}`);
+                if (err.response && err.response.status === 401) {
+                  message.error('需要登录才能执行此操作');
+                } else {
+                  message.error(`删除文件失败: ${err.response ? err.response.data : err.message}`);
+                }
               });
           }
 
